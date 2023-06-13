@@ -1,0 +1,105 @@
+---
+title: "Data Programming Project"
+author: "William Imbert"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(DT)
+```
+
+## 1. Introduction
+
+Lego is one of the most popular toy brands in the world. Everyone has already heard about the famous Lego bricks and sets, at the point where in Christmas period, approximately 28 Lego sets are sold each second ! The brand was created in 1932, started production of bricks in 1949 and have since been growing more and more to become the largest toy brand by revenue. The Lego sets are a big part of the childhood of many people, including me, and a lot of adult people never lost interest in their passion for Legos, creating amazing constructions (called MOC: My Own Creation), CAD softwares just for Legos or amazing websites where we can find second-hand parts or MOC instructions. A quick look at all the Lego community managed to build make us understand that this community is truly amazing and full of dedication. Some even did a gigantic job of referencing every single Lego part, set and figurines to make a free Dataset containing all of this data. With the symbol that Lego toys represent for many people, it is obviously very interesting to take a close look at this Lego data and try to extract interesting facts about all the sets and pieces of the iconic brand.
+
+## 2. Presentation of the data
+
+The dataset was taken from the Rebrickable website which is one of the most popular third-party lego website, referencing thousands of MOC instructions as well as all official lego sets and parts. It allows Lego fans to find the cheapets places to buy Lego parts and is for Lego enthusiasts a place to share their passion. Here is the Schema Diagram of the dataset provided by Rebrickable:
+
+![](https://rebrickable.com/static/img/diagrams/downloads_schema_v3.png)
+
+The `inventories` table can be seen as the central part of the dataset. Every inventory is linked to a set, with its name, year, theme_id and nb of parts. Every set has a category, which can for example be `Technic`, one of the most iconic Lego themes. An inventory can also be linked to `inventory_sets`(a single inventory linked to one set can contain multiple set), `inventory_minifigs` (which references the all minifigures contained in an inventory) and `inventory_parts` (which references all the parts contained in an inventory, along with its color and quantity). The `parts`, `colors`, `part_categories`, `parts relationships` and `elements`tables give us more informations on the parts used in the inventories, and the same is for `minifigs`, which give us informations about the Lego figurines.
+
+All tables are downloadable in `csv.gz` format and we can then use them in R by creating a list of all the datasets using the `read.csv` function. Note that we had to put all the `csv.gz` files in a `data` directory.
+
+```{r}
+lego <- list(colors = read.csv("data/colors.csv.gz"),
+             elements = read.csv("data/elements.csv.gz"),
+             inventories = read.csv("data/inventories.csv.gz"),
+             inventory_minifigs = read.csv("data/inventory_minifigs.csv.gz"),
+             inventory_parts = read.csv("data/inventory_parts.csv.gz"),
+             inventory_sets = read.csv("data/inventory_sets.csv.gz"),
+             minifigs = read.csv("data/minifigs.csv.gz"),
+             part_categories = read.csv("data/part_categories.csv.gz"),
+             part_relationships = read.csv("data/part_relationships.csv.gz"),
+             parts = read.csv("data/parts.csv.gz"),
+             sets = read.csv("data/sets.csv.gz"),
+             themes = read.csv("data/themes.csv.gz"))
+
+```
+
+## 3. Aggregation of data
+
+### Retrieve all parts contained in a Lego set
+```{r}
+get_set_parts <- \(set_number, set_version = 1, spare_parts = FALSE) {
+  lego$inventories %>%
+    dplyr::filter(set_num == str_c(set_number, '-', set_version, sep = ''), version == set_version) %>%
+    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+    dplyr::filter(grepl(ifelse(spare_parts, "[tf]", "f"), is_spare)) %>%
+    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+    inner_join(lego$colors, by = c("color_id" = "id")) %>%
+    inner_join(lego$part_categories, by = c("part_cat_id" = "id")) %>%
+    select(part_num, name = name.x, quantity, category = name, color = name.y) %>%
+    arrange(desc(quantity))
+}
+```
+
+The function takes as arguments the set number (present on all sets), the set version (generally there is only one, but in some rare cases there can be multiple, for example when there are some randomness in the set)
+Here are the parts of one of the 
+
+
+### Sets that have the most parts
+
+### Sets that have the most mean number of pieces
+
+### Most used pieces depending on the theme
+
+### Most used colors depending on the set/theme/part
+
+### Analysis on figurines
+
+## 4. Visualisation of the data
+
+### Pie chart of most used colors
+
+```{r}
+most_used_colors <- lego$inventory_parts %>%
+  inner_join(lego$colors, by = c("color_id" = "id")) %>%
+  group_by(name, rgb) %>%
+  count %>%
+  arrange(desc(n))
+most_used_colors <- most_used_colors %>%
+  ungroup %>%
+  slice_head(n=10) %>%
+  add_row(name="Other", rgb="EEEEEE", n=sum(most_used_colors$n)-sum(.$n)) %>%
+  arrange(name)
+most_used_colors %>%
+  ggplot() +
+    aes(x = "", y = n, fill = name) +
+    geom_bar(stat="identity", width=1) +
+    coord_polar("y", start=0) +
+    geom_text(aes(label = str_c(name, '\n', as.character(n)), x=1.8), position = position_stack(vjust=0.5), size = 3) +
+    scale_fill_manual(values=paste("#", most_used_colors$rgb, sep = "")) +
+    guides(fill=FALSE) +
+    theme_void()
+```
+
+## 5. Conclusion
+
+## 6. References
+
+<https://www.natgeokids.com/uk/kids-club/entertainment/general-entertainment/ten-top-lego-facts/> <https://en.wikipedia.org/wiki/Lego?oldformat=true> <https://www.statista.com/statistics/399131/value-of-the-leading-global-toy-brands/>
