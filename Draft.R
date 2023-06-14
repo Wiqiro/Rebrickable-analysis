@@ -1,6 +1,7 @@
 # Import libraries
 library(tidyverse)
 library(stringr)
+library(magick)
 
 # Load all data
 lego <- list(colors = read.csv("data/colors.csv.gz"),
@@ -16,68 +17,13 @@ lego <- list(colors = read.csv("data/colors.csv.gz"),
              sets = read.csv("data/sets.csv.gz"),
              themes = read.csv("data/themes.csv.gz"))
 
-
-#---------------Make a function that can retrieve all the parts necessary for a set---------------
-get_set_parts <- \(set_number, set_version = 1, spare_parts = FALSE) {
-  lego$inventories %>%
-    dplyr::filter(set_num == set_number, version == set_version) %>%
-    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
-    dplyr::filter(grepl(ifelse(spare_parts, "[tf]", "f"), is_spare)) %>%
-    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
-    inner_join(lego$colors, by = c("color_id" = "id")) %>%
-    inner_join(lego$part_categories, by = c("part_cat_id" = "id")) %>%
-    select(part_num, name = name.x, quantity, category = name, color = name.y)
-}
-
-get_set_parts("8422-1")
-
-
 lego$inventories %>%
   dplyr::filter(set_num == "41408-1") %>%
   inner_join(lego$inventory_minifigs, by = c("id" = "inventory_id")) %>%
   inner_join(lego$minifigs, by = c("fig_num" = "fig_num"))
 
 
-
-#---------------Evolution of number of parts, colors, nb of sets---------------
-#Nb of sets over time
-lego$sets %>%
-  dplyr::filter(year<2023) %>%
-  group_by(year) %>%
-  count %>%
-  ggplot() +
-    aes(x = year, y = n) +
-    geom_line() +
-    labs(x = "Year",
-      y = "Number of sets released",
-      title = "Evloution of the number of Lego releases over time") +
-    theme_light()
-
-#Evolution of the nb of colors over time
-lego$sets %>%
-  inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
-  inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
-  select(year, color_id) %>%
-  distinct %>%
-  group_by(year) %>%
-  count %>%
-  ggplot() +
-    aes(x = year, y = n) +
-    geom_line() +
-    labs(x = "Year",
-         y = "Number of unique colors",
-         title = "Evolution of the number colors used over time") +
-    theme_light()
-
-
 #---------------What are the sets that have the most parts / the most different parts---------------
-#The most parts
-lego$sets %>%
-  inner_join(lego$themes, by = c("theme_id" = "id")) %>%
-  select(set_num, set_name=name.x, year, theme=name.y, num_parts) %>%
-  arrange(desc(num_parts)) %>%
-  slice_head(n = 10)
-
 #The most spare parts
 lego$sets %>%
   inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
@@ -99,112 +45,4 @@ lego$sets %>%
   group_by(name.y) %>%
   summarise(mean_num_part=mean(num_parts)) %>%
   arrange(desc(mean_num_part))
-
-#---------------Get most used pieces/piece categories depending on the theme---------------
-
-#Function
-most_used_parts_theme <- \(themes_id = lego$themes$id) {
-  lego$sets %>%
-    dplyr::filter(theme_id %in% c(themes_id)) %>%
-    select(set_num) %>%
-    inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
-    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
-    filter(version == 1) %>%
-    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
-    select(num = part_num, name, quantity) %>%
-    group_by(num, name) %>%
-    summarize(quantity = sum(quantity)) %>%
-    arrange(desc(quantity)) %>%
-    ungroup
-}
-#Most used parts in general with percentage
-most_used_parts_theme() %>%
-  mutate(prop=.$quantity/sum(.$quantity)*100)
-
-#Most used lego technic parts
-most_used_parts_theme(1) %>%
-  mutate(prop=.$quantity/sum(.$quantity)*100)
-
-#Most used lego creator parts
-most_used_parts_theme(22) %>%
-  mutate(prop=.$quantity/sum(.$quantity)*100)
-
-
-
-#What are the themes that have the most sets / pieces
-lego$sets %>%
-  inner_join(lego$themes, by = c("theme_id" = "id")) %>%
-  group_by(name.y) %>%
-  count %>%
-  arrange(desc(n)) %>%
-  slice_head(n=25)
-
-
-#---------------What sets/themes/part have the most colors---------------
-#Parts
-lego$elements %>%
-  group_by(part_num) %>%
-  count() %>%
-  arrange(desc(n))
-
-#Sets
-lego$sets %>%
-  inner_join(lego$inventories, by=c("set_num"="set_num")) %>%
-  inner_join(lego$inventory_parts, by=c("id" = "inventory_id")) %>%
-  group_by(set_num, name) %>%
-  distinct(color_id) %>%
-  count %>%
-  arrange(desc(n))
-
-#Most used colors in total
-most_used_colors <- lego$inventory_parts %>%
-  inner_join(lego$colors, by = c("color_id" = "id")) %>%
-  group_by(name, rgb) %>%
-  count %>%
-  arrange(desc(n))
-most_used_colors <- most_used_colors %>%
-  ungroup %>%
-  slice_head(n=10) %>%
-  add_row(name="Other", rgb="EEEEEE", n=sum(most_used_colors$n)-sum(.$n)) %>%
-  arrange(name)
-most_used_colors %>%
-  ggplot() +
-    aes(x = "", y = n, fill = name) +
-    geom_bar(stat="identity", width=1) +
-    coord_polar("y", start=0) +
-    geom_text(aes(label = str_c(name, '\n', as.character(n)), x=1.75), position = position_stack(vjust=0.5), size = 3) +
-    scale_fill_manual(values=paste("#", most_used_colors$rgb, sep = "")) +
-    guides(fill=FALSE) +
-    theme_void()
-
-#---------------Number of figurines, figurines that have the most pieces---------------
-#Nb of minifigs
-lego$minifigs %>% count
-
-#Figs that have the most pieces
-lego$minifigs %>%
-  select(fig_num, name, num_parts) %>%
-  arrange(desc(num_parts)) %>%
-  slice_head(n=10)
-
-#Sets that have the most minifigs
-lego$inventory_minifigs %>%
-  inner_join(lego$inventories, by = c("inventory_id" = "id")) %>%
-  inner_join(lego$sets, by = c("set_num" = "set_num")) %>%
-  group_by(set_num, name, version) %>% #To keep different inventories depending on versions
-  summarise(fig_count=sum(quantity)) %>%
-  ungroup %>%
-  select(!version) %>%
-  arrange(desc(fig_count)) %>%
-  distinct(name, fig_count, .keep_all=T) #Get rid of same sets with different inventories
-
-#---------------Inventory that have the most spare parts compared to nb of parts---------------
-lego$inventory_parts %>%
-  group_by(inventory_id, is_spare) %>%
-  summarise(quantity=sum(quantity)) %>% group_by(inventory_id) %>%
-  pivot_wider(names_from = is_spare, values_from = quantity, values_fill = 0) %>%
-  mutate(`%_spare`=t/f*100) %>%
-  arrange(desc(`%_spare`)) %>% print(n=500)
-
-#Why some sets have multiple inventories ?
 

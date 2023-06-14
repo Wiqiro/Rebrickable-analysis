@@ -13,7 +13,7 @@ library(DT)
 
 ## 1. Introduction
 
-Lego is one of the most popular toy brands in the world. Everyone has already heard about the famous Lego bricks and sets, at the point where in Christmas period, approximately 28 Lego sets are sold each second ! The brand was created in 1932, started production of bricks in 1949 and have since been growing more and more to become the largest toy brand by revenue. The Lego sets are a big part of the childhood of many people, including me, and a lot of adult people never lost interest in their passion for Legos, creating amazing constructions (called MOC: My Own Creation), CAD softwares just for Legos or amazing websites where we can find second-hand parts or MOC instructions. A quick look at all the Lego community managed to build make us understand that this community is truly amazing and full of dedication. Some even did a gigantic job of referencing every single Lego part, set and figurines to make a free Dataset containing all of this data. With the symbol that Lego toys represent for many people, it is obviously very interesting to take a close look at this Lego data and try to extract interesting facts about all the sets and pieces of the iconic brand.
+Lego is one of the most popular toy brands in the world. Everyone has already heard about the famous Lego bricks and sets, at the point where in Christmas period, approximately 28 Lego sets are sold each second ! The brand was created in 1932, started production of bricks in 1949 and have since been growing more and more to become the largest toy brand by revenue. The Lego sets are a big part of the childhood of many people, including me, and a lot of adult people never lost interest in their passion for Legos, creating amazing constructions (called MOC: My Own Creation), CAD softwares just for Legos or amazing websites where we can find second-hand parts or MOC instructions. A quick look at all the Lego community managed to build make us understand that this community is truly amazing and full of dedication. Some even did a gigantic job of referencing every single Lego part, set and figurines to make a free Dataset containing all of this data. With the symbol that Lego toys represent for many people, it is obviously very interesting to take a close look at this Lego data and try to extract interesting facts about all the sets and parts of the iconic brand.
 
 ## 2. Presentation of the data
 
@@ -43,6 +43,17 @@ lego <- list(colors = read.csv("data/colors.csv.gz"),
 
 ## 3. Aggregation of data
 
+### Sets that have the most parts
+We can easily get the sets that have the most parts:
+```{r}
+lego$sets %>%
+  inner_join(lego$themes, by = c("theme_id" = "id")) %>%
+  select(set_num, set_name=name.x, year, theme=name.y, num_parts) %>%
+  arrange(desc(num_parts)) %>%
+  slice_head(n = 10)
+```
+
+
 ### Retrieve all parts contained in a Lego set
 ```{r}
 get_set_parts <- \(set_number, set_version = 1, spare_parts = FALSE) {
@@ -57,22 +68,163 @@ get_set_parts <- \(set_number, set_version = 1, spare_parts = FALSE) {
     arrange(desc(quantity))
 }
 ```
+The function takes as arguments the set number (present on all sets), the set version (generally there is only one, but in some rare cases there can be multiple, for example when there are some randomness in the set) and finally the spare parts, which does not appear by default.
 
-The function takes as arguments the set number (present on all sets), the set version (generally there is only one, but in some rare cases there can be multiple, for example when there are some randomness in the set)
-Here are the parts of one of the 
+Here are the parts of some of the most popular Lego sets:
+- The World Map (set with the most parts):
+```{r}
+get_set_parts(31203) %>% datatable()
+```
+- The Eiffel Tower, which has the second most parts and maybe the most iconic set:
+```{r}
+get_set_parts(10307) %>% datatable()
+```
 
 
-### Sets that have the most parts
+- Liebherr R 9800 Excavator: one of the iconic Lego Technic sets with number 42100:
+```{r}
+get_set_parts(42100) %>% datatable
+```
 
-### Sets that have the most mean number of pieces
 
-### Most used pieces depending on the theme
+### Most used parts depending on the theme
+```{r}
+most_used_parts_theme <- \(themes_id = lego$themes$id) {
+  lego$sets %>%
+    dplyr::filter(theme_id %in% c(themes_id)) %>%
+    select(set_num) %>%
+    inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+    filter(version == 1) %>%
+    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+    select(num = part_num, name, quantity) %>%
+    group_by(num, name) %>%
+    summarize(quantity = sum(quantity)) %>%
+    arrange(desc(quantity)) %>%
+    ungroup
+}
+```
+This function simply takes the theme id (we can find it using the `themes` table) and returns a list of the most used parts with this theme. We can put multiple themes id as arguments and by default it the `themes_id` take the ids of all themes.
+
+Most used parts in general:
+
+```{r}
+most_used_parts_theme() %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+Most used Lego Technic parts:
+```{r}
+most_used_parts_theme(1) %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+
+Most used Lego Creator parts:
+```{r}
+most_used_parts_theme(22) %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+Using the mutate function, I also added the proportion in % of the most used parts.
+
+
+
+
+
 
 ### Most used colors depending on the set/theme/part
 
+Using the `elements` table, we can get the parts that have the most color variations:
+```{r}
+lego$elements %>%
+  inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+  group_by(part_num, name) %>%
+  count() %>%
+  arrange(desc(n)) %>%
+  ungroup %>%
+  slice_head(n=10)
+
+```
+
+We can also get the sets that have the most different colors:
+```{r}
+lego$sets %>%
+  inner_join(lego$inventories, by=c("set_num"="set_num")) %>%
+  inner_join(lego$inventory_parts, by=c("id" = "inventory_id")) %>%
+  group_by(set_num, name) %>%
+  distinct(color_id) %>%
+  count %>%
+  arrange(desc(n)) %>%
+  ungroup %>%
+  slice_head(n=10)
+```
+
+
 ### Analysis on figurines
+In total, there are `r lego$minifigs %>% count` figurines.
+
+Here are the sets that have the most minifigs:
+```{r}
+lego$inventory_minifigs %>%
+  inner_join(lego$inventories, by = c("inventory_id" = "id")) %>%
+  inner_join(lego$sets, by = c("set_num" = "set_num")) %>%
+  group_by(set_num, name, version) %>% #To keep different inventories depending on versions
+  summarise(fig_count=sum(quantity)) %>%
+  ungroup %>%
+  select(!version) %>%
+  arrange(desc(fig_count)) %>%
+  distinct(name, fig_count, .keep_all=T) %>% #Get rid of same sets with different inventories
+  slice_head(n=10)
+```
+
+Finally, here are the minifigs that have the most parts:
+```{r}
+lego$minifigs %>%
+  select(fig_num, name, num_parts) %>%
+  arrange(desc(num_parts)) %>%
+  slice_head(n=10)
+```
+
 
 ## 4. Visualisation of the data
+
+### Evolution of the number of Lego set releases over time:
+```{r}
+lego$sets %>%
+  dplyr::filter(year<2023) %>%
+  group_by(year) %>%
+  count %>%
+  ggplot() +
+    aes(x = year, y = n) +
+    geom_line() +
+    labs(x = "Year",
+      y = "Number of sets released",
+      title = "Evloution of the number of Lego releases over time") +
+    theme_light()
+```
+
+### Evolution of the number of colors used over time:
+```{r}
+lego$sets %>%
+  inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+  inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+  select(year, color_id) %>%
+  distinct %>%
+  group_by(year) %>%
+  count %>%
+  ggplot() +
+    aes(x = year, y = n) +
+    geom_line() +
+    labs(x = "Year",
+         y = "Number of unique colors",
+         title = "Evolution of the number colors used over time") +
+    theme_light()
+```
+
 
 ### Pie chart of most used colors
 
