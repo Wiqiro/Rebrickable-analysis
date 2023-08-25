@@ -3,6 +3,7 @@ title: "Data Programming Project"
 author: "William Imbert"
 date: "`r Sys.Date()`"
 output: html_document
+bibliography: bibliography.bib
 ---
 
 ```{r setup, include=FALSE}
@@ -17,7 +18,7 @@ Lego is one of the most popular toy brands in the world. Everyone has already he
 
 ## 2. Presentation of the data
 
-The dataset was taken from the Rebrickable website which is one of the most popular third-party lego website, referencing thousands of MOC instructions as well as all official lego sets and parts. It allows Lego fans to find the cheapets places to buy Lego parts and is for Lego enthusiasts a place to share their passion. Here is the Schema Diagram of the dataset provided by Rebrickable:
+The dataset was taken from the Rebrickable website which is one of the most popular third-party Lego website, referencing thousands of MOC instructions as well as all official Lego sets and parts. It allows Lego fans to find the cheapest places to buy Lego parts and is for Lego enthusiasts a place to share their passion. Here is the Schema Diagram of the dataset provided by Rebrickable:
 
 ![](https://rebrickable.com/static/img/diagrams/downloads_schema_v3.png)
 
@@ -132,10 +133,6 @@ most_used_parts_theme(22) %>%
 Using the mutate function, I also added the proportion in % of the most used parts.
 
 
-
-
-
-
 ### Most used colors depending on the set/theme/part
 
 Using the `elements` table, we can get the parts that have the most color variations:
@@ -193,9 +190,11 @@ lego$minifigs %>%
 ## 4. Visualisation of the data
 
 ### Evolution of the number of Lego set releases over time:
+Here, we count the lego releases every years from 1949 to 2022 to visualize the evolution
 ```{r}
 lego$sets %>%
-  dplyr::filter(year<2023) %>%
+  inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+  dplyr::filter(year < 2023 & version == 1) %>% # We need to filter version to avoid duplicate releases
   group_by(year) %>%
   count %>%
   ggplot() +
@@ -206,6 +205,9 @@ lego$sets %>%
       title = "Evloution of the number of Lego releases over time") +
     theme_light()
 ```
+
+As we can see, the Lego releases really started to skyrocket after the 90s and globally kept increasing, reaching more than 1100 releases in 2021, even though it sometimes dropped after peak years.
+
 
 ### Evolution of the number of colors used over time:
 ```{r}
@@ -225,13 +227,14 @@ lego$sets %>%
     theme_light()
 ```
 
+Surprisingly, the number od unique colors started increasing very sharply around 1995 and peaked at over a hundred in 2004, before brutally decreasing to around 60. The number of unique colors has then been slowly increasing until today.
 
 ### Pie chart of most used colors
 
 ```{r}
 most_used_colors <- lego$inventory_parts %>%
   inner_join(lego$colors, by = c("color_id" = "id")) %>%
-  group_by(name, rgb) %>%
+  group_by(color_id, name, rgb) %>%
   count %>%
   arrange(desc(n))
 most_used_colors <- most_used_colors %>%
@@ -250,8 +253,37 @@ most_used_colors %>%
     theme_void()
 ```
 
+As we can see on this piechart, the most common color in Lego sets is black, present in over 200 000 unique parts since 1947, followed by white and dark bluish grey. The 10 most colors represent the majority of the Lego colors, however there are still around 300 000 unique parts with a color that's not in the top 10.
+
+### Evolution of the distribution of the 10 most used colors
+```{r}
+most_used_colors_year <- most_used_colors %>%
+  select(color_id, name, rgb) %>%
+  inner_join(lego$inventory_parts, by = c("color_id"="color_id")) %>%
+  inner_join(lego$inventories, by = c("inventory_id"="id")) %>%
+  inner_join(lego$sets, by = c("set_num"="set_num")) %>%
+  group_by(name=name.x, rgb, year) %>%
+  count %>%
+  arrange(name)
+          
+most_used_colors_year %>%
+  dplyr::filter(year > 1960 & year < 2023) %>%
+  ggplot() +
+    aes(x = year, y = n, fill = name) +
+    geom_area() +
+  scale_fill_manual(values=paste("#", unique(most_used_colors_year$rgb), sep = "")) +
+    theme_minimal()
+```
+
+We can see on this area chart that some of the most used colors in general appeared only after 2000 like the two new shades of gray that replaced the old one, along with Reddish Brown and Tan.
+
+
 ## 5. Conclusion
+We have been exploring the statistics around the Lego brand. First, we managed to extract some fun facts using the Rebrickable dataset, for example the sets that have the most parts and data about minifigurines. We also created some useful functions that allow us to retrieve all the parts necessary to build a Lego set and to get the most used parts depending on the Lego theme. We visualized the Rebrickable data and saw that the number of set releases and colors used are globally increasing over the years, which is coherent with the fact that the Lego company is growing years after years Finally, we built two chart related to colors: one shows the distribution of the most used colors and the other shows the evolution of the repartition. Globally, we see that black, white and the shades of gray are the most used colors in general.
+
 
 ## 6. References
 
-<https://www.natgeokids.com/uk/kids-club/entertainment/general-entertainment/ten-top-lego-facts/> <https://en.wikipedia.org/wiki/Lego?oldformat=true> <https://www.statista.com/statistics/399131/value-of-the-leading-global-toy-brands/>
+---
+nocite: '@*'
+---
