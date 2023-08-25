@@ -1,0 +1,268 @@
+## 1. Introduction
+
+Lego is one of the most popular toy brands in the world. Everyone has already heard about the famous Lego bricks and sets, at the point where in Christmas period, approximately 28 Lego sets are sold each second ! The brand was created in 1932, started production of bricks in 1949 and have since been growing more and more to become the largest toy brand by revenue. The Lego sets are a big part of the childhood of many people, including me, and a lot of adult people never lost interest in their passion for Legos, creating amazing constructions (called MOC: My Own Creation), CAD softwares just for Legos or amazing websites where we can find second-hand parts or MOC instructions. A quick look at all the Lego community managed to build make us understand that this community is truly amazing and full of dedication. Some even did a gigantic job of referencing every single Lego part, set and figurines to make a free Dataset containing all of this data. With the symbol that Lego toys represent for many people, it is obviously very interesting to take a close look at this Lego data and try to extract interesting facts about all the sets and parts of the iconic brand.
+
+## 2. Presentation of the data
+
+The dataset was taken from the Rebrickable website which is one of the most popular third-party Lego website, referencing thousands of MOC instructions as well as all official Lego sets and parts. It allows Lego fans to find the cheapest places to buy Lego parts and is for Lego enthusiasts a place to share their passion. Here is the Schema Diagram of the dataset provided by Rebrickable:
+
+![](https://rebrickable.com/static/img/diagrams/downloads_schema_v3.png)
+
+The `inventories` table can be seen as the central part of the dataset. Every inventory is linked to a set, with its name, year, theme_id and nb of parts. Every set has a category, which can for example be `Technic`, one of the most iconic Lego themes. An inventory can also be linked to `inventory_sets`(a single inventory linked to one set can contain multiple set), `inventory_minifigs` (which references the all minifigures contained in an inventory) and `inventory_parts` (which references all the parts contained in an inventory, along with its color and quantity). The `parts`, `colors`, `part_categories`, `parts relationships` and `elements`tables give us more informations on the parts used in the inventories, and the same is for `minifigs`, which give us informations about the Lego figurines.
+
+All tables are downloadable in `csv.gz` format and we can then use them in R by creating a list of all the datasets using the `read.csv` function. Note that we had to put all the `csv.gz` files in a `data` directory.
+
+```r
+lego <- list(colors = read.csv("data/colors.csv.gz"),
+             elements = read.csv("data/elements.csv.gz"),
+             inventories = read.csv("data/inventories.csv.gz"),
+             inventory_minifigs = read.csv("data/inventory_minifigs.csv.gz"),
+             inventory_parts = read.csv("data/inventory_parts.csv.gz"),
+             inventory_sets = read.csv("data/inventory_sets.csv.gz"),
+             minifigs = read.csv("data/minifigs.csv.gz"),
+             part_categories = read.csv("data/part_categories.csv.gz"),
+             part_relationships = read.csv("data/part_relationships.csv.gz"),
+             parts = read.csv("data/parts.csv.gz"),
+             sets = read.csv("data/sets.csv.gz"),
+             themes = read.csv("data/themes.csv.gz"))
+
+```
+
+## 3. Aggregation of data
+
+### Sets that have the most parts
+We can easily get the sets that have the most parts:
+```r
+lego$sets %>%
+  inner_join(lego$themes, by = c("theme_id" = "id")) %>%
+  select(set_num, set_name=name.x, year, theme=name.y, num_parts) %>%
+  arrange(desc(num_parts)) %>%
+  slice_head(n = 10)
+```
+
+
+### Retrieve all parts contained in a Lego set
+```r
+get_set_parts <- \(set_number, set_version = 1, spare_parts = FALSE) {
+  lego$inventories %>%
+    dplyr::filter(set_num == str_c(set_number, '-', set_version, sep = ''), version == set_version) %>%
+    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+    dplyr::filter(grepl(ifelse(spare_parts, "[tf]", "f"), is_spare)) %>%
+    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+    inner_join(lego$colors, by = c("color_id" = "id")) %>%
+    inner_join(lego$part_categories, by = c("part_cat_id" = "id")) %>%
+    select(part_num, name = name.x, quantity, category = name, color = name.y) %>%
+    arrange(desc(quantity))
+}
+```
+The function takes as arguments the set number (present on all sets), the set version (generally there is only one, but in some rare cases there can be multiple, for example when there are some randomness in the set) and finally the spare parts, which does not appear by default.
+
+Here are the parts of some of the most popular Lego sets:
+- The World Map (set with the most parts):
+```r
+get_set_parts(31203) %>% datatable()
+```
+- The Eiffel Tower, which has the second most parts and maybe the most iconic set:
+```r
+get_set_parts(10307) %>% datatable()
+```
+
+
+- Liebherr R 9800 Excavator: one of the iconic Lego Technic sets with number 42100:
+```r
+get_set_parts(42100) %>% datatable
+```
+
+
+### Most used parts depending on the theme
+```r
+most_used_parts_theme <- \(themes_id = lego$themes$id) {
+  lego$sets %>%
+    dplyr::filter(theme_id %in% c(themes_id)) %>%
+    select(set_num) %>%
+    inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+    inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+    filter(version == 1) %>%
+    inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+    select(num = part_num, name, quantity) %>%
+    group_by(num, name) %>%
+    summarize(quantity = sum(quantity)) %>%
+    arrange(desc(quantity)) %>%
+    ungroup
+}
+```
+This function simply takes the theme id (we can find it using the `themes` table) and returns a list of the most used parts with this theme. We can put multiple themes id as arguments and by default it the `themes_id` take the ids of all themes.
+
+Most used parts in general:
+
+```r
+most_used_parts_theme() %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+Most used Lego Technic parts:
+```r
+most_used_parts_theme(1) %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+
+Most used Lego Creator parts:
+```r
+most_used_parts_theme(22) %>%
+  mutate(prop=.$quantity/sum(.$quantity)*100) %>%
+  slice_head(n=10)
+```
+
+Using the mutate function, I also added the proportion in % of the most used parts.
+
+
+### Most used colors depending on the set/theme/part
+
+Using the `elements` table, we can get the parts that have the most color variations:
+```r
+lego$elements %>%
+  inner_join(lego$parts, by = c("part_num" = "part_num")) %>%
+  group_by(part_num, name) %>%
+  count() %>%
+  arrange(desc(n)) %>%
+  ungroup %>%
+  slice_head(n=10)
+
+```
+
+We can also get the sets that have the most different colors:
+```r
+lego$sets %>%
+  inner_join(lego$inventories, by=c("set_num"="set_num")) %>%
+  inner_join(lego$inventory_parts, by=c("id" = "inventory_id")) %>%
+  group_by(set_num, name) %>%
+  distinct(color_id) %>%
+  count %>%
+  arrange(desc(n)) %>%
+  ungroup %>%
+  slice_head(n=10)
+```
+
+
+### Analysis on figurines
+In total, there are `r lego$minifigs %>% count` figurines.
+
+Here are the sets that have the most minifigs:
+```r
+lego$inventory_minifigs %>%
+  inner_join(lego$inventories, by = c("inventory_id" = "id")) %>%
+  inner_join(lego$sets, by = c("set_num" = "set_num")) %>%
+  group_by(set_num, name, version) %>% #To keep different inventories depending on versions
+  summarise(fig_count=sum(quantity)) %>%
+  ungroup %>%
+  select(!version) %>%
+  arrange(desc(fig_count)) %>%
+  distinct(name, fig_count, .keep_all=T) %>% #Get rid of same sets with different inventories
+  slice_head(n=10)
+```
+
+Finally, here are the minifigs that have the most parts:
+```r
+lego$minifigs %>%
+  select(fig_num, name, num_parts) %>%
+  arrange(desc(num_parts)) %>%
+  slice_head(n=10)
+```
+
+
+## 4. Visualisation of the data
+
+### Evolution of the number of Lego set releases over time:
+Here, we count the lego releases every years from 1949 to 2022 to visualize the evolution
+```r
+lego$sets %>%
+  inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+  dplyr::filter(year < 2023 & version == 1) %>% # We need to filter version to avoid duplicate releases
+  group_by(year) %>%
+  count %>%
+  ggplot() +
+    aes(x = year, y = n) +
+    geom_line() +
+    labs(x = "Year",
+      y = "Number of sets released",
+      title = "Evloution of the number of Lego releases over time") +
+    theme_light()
+```
+
+As we can see, the Lego releases really started to skyrocket after the 90s and globally kept increasing, reaching more than 1100 releases in 2021, even though it sometimes dropped after peak years.
+
+
+### Evolution of the number of colors used over time:
+```r
+lego$sets %>%
+  inner_join(lego$inventories, by = c("set_num" = "set_num")) %>%
+  inner_join(lego$inventory_parts, by = c("id" = "inventory_id")) %>%
+  select(year, color_id) %>%
+  distinct %>%
+  group_by(year) %>%
+  count %>%
+  ggplot() +
+    aes(x = year, y = n) +
+    geom_line() +
+    labs(x = "Year",
+         y = "Number of unique colors",
+         title = "Evolution of the number colors used over time") +
+    theme_light()
+```
+
+Surprisingly, the number od unique colors started increasing very sharply around 1995 and peaked at over a hundred in 2004, before brutally decreasing to around 60. The number of unique colors has then been slowly increasing until today.
+
+### Pie chart of most used colors
+
+```r
+most_used_colors <- lego$inventory_parts %>%
+  inner_join(lego$colors, by = c("color_id" = "id")) %>%
+  group_by(color_id, name, rgb) %>%
+  count %>%
+  arrange(desc(n))
+most_used_colors <- most_used_colors %>%
+  ungroup %>%
+  slice_head(n=10) %>%
+  add_row(name="Other", rgb="EEEEEE", n=sum(most_used_colors$n)-sum(.$n)) %>%
+  arrange(name)
+most_used_colors %>%
+  ggplot() +
+    aes(x = "", y = n, fill = name) +
+    geom_bar(stat="identity", width=1) +
+    coord_polar("y", start=0) +
+    geom_text(aes(label = str_c(name, '\n', as.character(n)), x=1.8), position = position_stack(vjust=0.5), size = 3) +
+    scale_fill_manual(values=paste("#", most_used_colors$rgb, sep = "")) +
+    guides(fill=FALSE) +
+    theme_void()
+```
+
+As we can see on this piechart, the most common color in Lego sets is black, present in over 200 000 unique parts since 1947, followed by white and dark bluish grey. The 10 most colors represent the majority of the Lego colors, however there are still around 300 000 unique parts with a color that's not in the top 10.
+
+### Evolution of the distribution of the 10 most used colors
+```r
+most_used_colors_year <- most_used_colors %>%
+  select(color_id, name, rgb) %>%
+  inner_join(lego$inventory_parts, by = c("color_id"="color_id")) %>%
+  inner_join(lego$inventories, by = c("inventory_id"="id")) %>%
+  inner_join(lego$sets, by = c("set_num"="set_num")) %>%
+  group_by(name=name.x, rgb, year) %>%
+  count %>%
+  arrange(name)
+          
+most_used_colors_year %>%
+  dplyr::filter(year > 1960 & year < 2023) %>%
+  ggplot() +
+    aes(x = year, y = n, fill = name) +
+    geom_area() +
+  scale_fill_manual(values=paste("#", unique(most_used_colors_year$rgb), sep = "")) +
+    theme_minimal()
+```
+
+We can see on this area chart that some of the most used colors in general appeared only after 2000 like the two new shades of gray that replaced the old one, along with Reddish Brown and Tan.
+
+
+## 5. Conclusion
+We have been exploring the statistics around the Lego brand. First, we managed to extract some fun facts using the Rebrickable dataset, for example the sets that have the most parts and data about minifigurines. We also created some useful functions that allow us to retrieve all the parts necessary to build a Lego set and to get the most used parts depending on the Lego theme. We visualized the Rebrickable data and saw that the number of set releases and colors used are globally increasing over the years, which is coherent with the fact that the Lego company is growing years after years Finally, we built two chart related to colors: one shows the distribution of the most used colors and the other shows the evolution of the repartition. Globally, we see that black, white and the shades of gray are the most used colors in general.
